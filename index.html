@@ -7,7 +7,6 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Vida Intencional" />
-  <meta name="description" content="Sistema operacional da sua vida" />
   <link rel="apple-touch-icon" href="/icon-192.png" />
   <link rel="manifest" href="/manifest.json" />
   <title>Vida Intencional</title>
@@ -21,15 +20,16 @@
       padding-bottom: env(safe-area-inset-bottom);
     }
     #splash {
-      position: fixed; inset: 0;
-      background: #0F1117;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 16px; z-index: 9999;
-      transition: opacity 0.5s ease;
+      position: fixed; inset: 0; background: #0F1117;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 16px; z-index: 9999; transition: opacity 0.5s ease;
     }
     #splash p { color: #C9A84C; font-size: 13px; letter-spacing: 0.1em; }
     #splash h1 { color: #E8E2D5; font-size: 28px; font-family: Georgia, serif; }
+    #error-box {
+      display:none; position:fixed; inset:0; background:#0F1117; color:#E8E2D5;
+      padding:20px; font-family:monospace; font-size:12px; z-index:99999; overflow:auto; white-space:pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -38,11 +38,1774 @@
     <h1>Vida Intencional</h1>
     <p>TODO DIA, UM TIJOLO.</p>
   </div>
+  <div id="error-box"></div>
   <div id="root"></div>
+
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script type="text/babel" data-type="module" src="/app.jsx"></script>
+
+  <script>
+    window.addEventListener('error', function(e) {
+      var box = document.getElementById('error-box');
+      box.style.display = 'block';
+      box.textContent = 'ERRO: ' + e.message + '\n\nLinha: ' + e.lineno + '\nArquivo: ' + e.filename;
+      var splash = document.getElementById('splash');
+      if (splash) splash.remove();
+    });
+  </script>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useCallback, createContext, useContext, useMemo } = React;
+
+const T = {
+  bg:"#0F1117", surface:"#1A1F2E", surfaceHigh:"#242B3D",
+  gold:"#C9A84C", goldDim:"#8A6F33",
+  text:"#E8E2D5", textSub:"#7A8099", textMuted:"#4A5568",
+  danger:"#E05C5C", success:"#5CB88A",
+  sectors:{
+    espiritual:"#C9A84C", familia:"#E07B5C", saude:"#5CB88A",
+    profissional:"#5C8AE0", financeiro:"#A07BE0", desenvolvimento:"#5CC4C9",
+  },
+};
+const SECTOR_ICONS  = { espiritual:"✦",familia:"♡",saude:"◎",profissional:"◈",financeiro:"◇",desenvolvimento:"◉" };
+const SECTOR_LABELS = { espiritual:"Espiritual",familia:"Família",saude:"Saúde",profissional:"Profissional",financeiro:"Financeiro",desenvolvimento:"Desenvolvimento" };
+const MEDIA_TYPES   = ["Livro","Curso","Podcast","Artigo","Vídeo"];
+const MEDIA_ICONS   = { Livro:"📖",Curso:"🎓",Podcast:"🎧",Artigo:"📄","Vídeo":"▶️" };
+const MEDIA_STATUS  = ["Quero ler","Em andamento","Concluído"];
+
+function useStorage(key, initial) {
+  const [state, setState] = useState(() => {
+    try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : initial; }
+    catch { return initial; }
+  });
+  const set = useCallback((val) => {
+    setState((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]);
+  return [state, set];
+}
+
+// ── INITIAL DATA ──────────────────────────────────────────────────
+const INITIAL_GOALS = [
+  { id:"g1", sector:"espiritual",    title:"Vida de oração consistente",        deadline:"2025-12-31" },
+  { id:"g2", sector:"espiritual",    title:"Conhecer mais a Palavra",            deadline:"2025-12-31" },
+  { id:"g3", sector:"familia",       title:"Família mais próxima e unida",       deadline:"2025-12-31" },
+  { id:"g4", sector:"saude",         title:"Perder 10kg",                        deadline:"2025-12-31" },
+  { id:"g5", sector:"saude",         title:"Faixa Azul — Jiu-Jítsu",            deadline:"2025-09-30" },
+  { id:"g6", sector:"profissional",  title:"60 imóveis alugados",               deadline:"2025-06-30" },
+  { id:"g7", sector:"profissional",  title:"Presença digital forte",             deadline:"2025-12-31" },
+  { id:"g8", sector:"financeiro",    title:"R$ 50k em reserva",                  deadline:"2025-12-31" },
+  { id:"g9", sector:"desenvolvimento",title:"Aprender inglês (1.000 palavras)",  deadline:"2025-12-31" },
+  { id:"g10",sector:"desenvolvimento",title:"Ler 12 livros este ano",            deadline:"2025-12-31" },
+];
+
+const INITIAL_SUBTASKS = [
+  // Jiu-Jítsu: 4 graus até faixa azul
+  { id:"s1", goalId:"g5", title:"1º Grau — 70% presença (mês 1-3)",   done:false },
+  { id:"s2", goalId:"g5", title:"2º Grau — 70% presença (mês 4-6)",   done:false },
+  { id:"s3", goalId:"g5", title:"3º Grau — 70% presença (mês 7-9)",   done:false },
+  { id:"s4", goalId:"g5", title:"4º Grau / Faixa Azul",               done:false },
+  // Perder 10kg: marcos a cada 2kg
+  { id:"s5", goalId:"g4", title:"Perder 2kg",   done:false },
+  { id:"s6", goalId:"g4", title:"Perder 4kg",   done:false },
+  { id:"s7", goalId:"g4", title:"Perder 6kg",   done:false },
+  { id:"s8", goalId:"g4", title:"Perder 8kg",   done:false },
+  { id:"s9", goalId:"g4", title:"Perder 10kg",  done:false },
+  // 60 imóveis
+  { id:"s10",goalId:"g6", title:"15 imóveis alugados", done:false },
+  { id:"s11",goalId:"g6", title:"30 imóveis alugados", done:false },
+  { id:"s12",goalId:"g6", title:"45 imóveis alugados", done:false },
+  { id:"s13",goalId:"g6", title:"60 imóveis alugados", done:false },
+];
+
+// targetPerWeek → frequência alvo semanal (para calcular meta mensal)
+const INITIAL_HABITS = [
+  { id:"h1",  goalId:"g1",  sector:"espiritual",    label:"Oração",                targetPerWeek:7 },
+  { id:"h2",  goalId:"g2",  sector:"espiritual",    label:"Leitura Bíblica",        targetPerWeek:7 },
+  { id:"h3",  goalId:"g1",  sector:"espiritual",    label:"Guardar o coração",      targetPerWeek:7 },
+  { id:"h4",  goalId:"g3",  sector:"familia",       label:"Dizer 'eu te amo'",      targetPerWeek:7 },
+  { id:"h5",  goalId:"g3",  sector:"familia",       label:"Tempo de qualidade",     targetPerWeek:3 },
+  { id:"h6",  goalId:"g4",  sector:"saude",         label:"Sem doce hoje",          targetPerWeek:7 },
+  { id:"h7",  goalId:"g4",  sector:"saude",         label:"Alimentação Low Carb",   targetPerWeek:7 },
+  { id:"h8",  goalId:"g5",  sector:"saude",         label:"Treino Jiu-Jítsu",       targetPerWeek:4 },
+  { id:"h9",  goalId:"g6",  sector:"profissional",  label:"Prospectar proprietário",targetPerWeek:5 },
+  { id:"h10", goalId:"g6",  sector:"profissional",  label:"Follow-up com leads",    targetPerWeek:5 },
+  { id:"h11", goalId:"g7",  sector:"profissional",  label:"Postagem diária",        targetPerWeek:6 },
+  { id:"h12", goalId:"g8",  sector:"financeiro",    label:"Controle financeiro",    targetPerWeek:7 },
+  { id:"h13", goalId:"g10", sector:"desenvolvimento",label:"Leitura (30 min)",      targetPerWeek:6 },
+  { id:"h14", goalId:"g10", sector:"desenvolvimento",label:"Podcast / Estudo",      targetPerWeek:5 },
+  { id:"h15", goalId:"g9",  sector:"desenvolvimento",label:"Inglês (5 palavras)",   targetPerWeek:7 },
+];
+
+const INITIAL_LIBRARY = [
+  { id:"b1", sector:"desenvolvimento", goalId:"g10", type:"Livro",   title:"Hábitos Atômicos",       author:"James Clear",      status:"Concluído",    notes:"Pequenas mudanças compõem grandes resultados.", rating:5 },
+  { id:"b2", sector:"espiritual",      goalId:"g2",  type:"Livro",   title:"Propósito de Vida",      author:"Rick Warren",      status:"Em andamento", notes:"", rating:0 },
+  { id:"b3", sector:"profissional",    goalId:"g6",  type:"Podcast", title:"Café com Corretor",      author:"",                 status:"Em andamento", notes:"", rating:0 },
+  { id:"b4", sector:"saude",           goalId:"g5",  type:"Vídeo",   title:"Fundamentos do Jiu-Jítsu",author:"Canal JJ Brasil", status:"Quero ler",    notes:"", rating:0 },
+];
+
+const VISION = `Primeiramente amo a Deus acima de tudo. Se O amo, amo pessoas, e serei gentil com todos. Dedico tempo de qualidade com minha família. Sento na mesa com eles uma vez na semana. Falo que os amo todos os dias.
+
+Amo os princípios de Deus — a integridade, disciplina, diligência — e busco a excelência em tudo que faço. Darei meu melhor na igreja, trabalho, estudos e finanças.
+
+Usarei meus recursos, tempo e finanças com sabedoria. Todas as manhãs consultarei a Voz de Deus. Guardarei meu coração, vigiarei minhas palavras, serei intencional nas minhas ações.
+
+Que eu não perca a oportunidade de ser generoso. Serei prudente. Serei Santo aos olhos de Deus. Honrarei o nome de Jesus.`;
+
+// ── CONTEXT ───────────────────────────────────────────────────────
+const AppContext = createContext(null);
+
+function AppProvider({ children }) {
+  const todayKey = new Date().toISOString().slice(0,10);
+  const [habits,   setHabits]   = useStorage("vi4_habits",   INITIAL_HABITS);
+  const [goals,    setGoals]    = useStorage("vi4_goals",    INITIAL_GOALS);
+  const [subtasks, setSubtasks] = useStorage("vi4_subtasks", INITIAL_SUBTASKS);
+  const [checks,   setChecks]   = useStorage("vi4_checks",   {});
+  const [library,  setLibrary]  = useStorage("vi4_library",  INITIAL_LIBRARY);
+  const [diary,    setDiary]    = useStorage("vi6_diary",    []);
+  const [health,   setHealth]   = useStorage("vi7_health",   { goal: 80, entries: [] });
+  const [exams,    setExams]    = useStorage("vi8_exams",    []);
+
+  const todayChecks = checks[todayKey] || {};
+
+  const todayHabits = useMemo(() =>
+    habits.map((h) => ({ ...h, done:!!todayChecks[h.id], goal:goals.find((g)=>g.id===h.goalId)||null })),
+    [habits, goals, todayChecks]
+  );
+
+  // Monthly metrics: count how many times each habit was checked this calendar month
+  const monthlyMetrics = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    const daysInMonth = new Date(y, m+1, 0).getDate();
+    const result = {};
+    habits.forEach((h) => {
+      let done = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dk = `${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+        if (checks[dk]?.[h.id]) done++;
+      }
+      // target = targetPerWeek * weeks in month (approx)
+      const target = Math.round((h.targetPerWeek||1) * (daysInMonth/7));
+      result[h.id] = { done, target, pct: Math.round((done/target)*100) };
+    });
+    return result;
+  }, [habits, checks]);
+
+  // Goal progress = habit consistency (70%) + subtask completion (30%)
+  const goalProgress = useMemo(() => {
+    const result = {};
+    goals.forEach((g) => {
+      const gHabits = habits.filter((h) => h.goalId===g.id);
+      const gSubs   = subtasks.filter((s) => s.goalId===g.id);
+      let habitScore = 35;
+      if (gHabits.length) {
+        const avgPct = gHabits.reduce((acc,h) => acc+(monthlyMetrics[h.id]?.pct||0), 0) / gHabits.length;
+        habitScore = Math.min(avgPct, 100) * 0.70;
+      }
+      let subScore = 0;
+      if (gSubs.length) subScore = (gSubs.filter((s)=>s.done).length/gSubs.length)*30;
+      result[g.id] = Math.round(habitScore+subScore);
+    });
+    return result;
+  }, [goals, habits, subtasks, monthlyMetrics]);
+
+  const toggleHabit = useCallback((id) => {
+    setChecks((prev) => {
+      const day = { ...(prev[todayKey]||{}) };
+      day[id] = !day[id];
+      return { ...prev, [todayKey]:day };
+    });
+  }, [todayKey, setChecks]);
+
+  const toggleSubtask  = useCallback((id) => setSubtasks((p)=>p.map((s)=>s.id===id?{...s,done:!s.done}:s)), [setSubtasks]);
+  const addGoal        = useCallback((g) => setGoals((p)=>[...p,{...g,id:`g${Date.now()}`}]), [setGoals]);
+  const updateGoal     = useCallback((id,patch) => setGoals((p)=>p.map((g)=>g.id===id?{...g,...patch}:g)), [setGoals]);
+  const deleteGoal     = useCallback((id) => { setGoals((p)=>p.filter((g)=>g.id!==id)); setSubtasks((p)=>p.filter((s)=>s.goalId!==id)); }, [setGoals,setSubtasks]);
+  const addSubtask     = useCallback((s) => setSubtasks((p)=>[...p,{...s,id:`s${Date.now()}`,done:false}]), [setSubtasks]);
+  const deleteSubtask  = useCallback((id) => setSubtasks((p)=>p.filter((s)=>s.id!==id)), [setSubtasks]);
+  const addHabit       = useCallback((h) => setHabits((p)=>[...p,{...h,id:`h${Date.now()}`,targetPerWeek:h.targetPerWeek||1}]), [setHabits]);
+  const updateHabit    = useCallback((id,patch) => setHabits((p)=>p.map((h)=>h.id===id?{...h,...patch}:h)), [setHabits]);
+  const deleteHabit    = useCallback((id) => setHabits((p)=>p.filter((h)=>h.id!==id)), [setHabits]);
+  const addMedia       = useCallback((m) => setLibrary((p)=>[...p,{...m,id:`b${Date.now()}`,rating:0}]), [setLibrary]);
+  const updateMedia    = useCallback((id,patch) => setLibrary((p)=>p.map((b)=>b.id===id?{...b,...patch}:b)), [setLibrary]);
+  const deleteMedia    = useCallback((id) => setLibrary((p)=>p.filter((b)=>b.id!==id)), [setLibrary]);
+
+  const addDiaryEntry    = useCallback((e) => setDiary((p)=>[...p,{...e,id:`d${Date.now()}`}]), [setDiary]);
+  const updateDiaryEntry = useCallback((id,patch) => setDiary((p)=>p.map((e)=>e.id===id?{...e,...patch}:e)), [setDiary]);
+  const deleteDiaryEntry = useCallback((id) => setDiary((p)=>p.filter((e)=>e.id!==id)), [setDiary]);
+
+  const addHealthEntry    = useCallback((e) => setHealth((p)=>({...p,entries:[...p.entries,{...e,id:`he${Date.now()}`,date:e.date||new Date().toISOString().slice(0,10)}]})), [setHealth]);
+  const deleteHealthEntry = useCallback((id) => setHealth((p)=>({...p,entries:p.entries.filter((e)=>e.id!==id)})), [setHealth]);
+  const setHealthGoal     = useCallback((goal) => setHealth((p)=>({...p,goal})), [setHealth]);
+  const addExam           = useCallback((e) => setExams((p)=>[...p,{...e,id:`ex${Date.now()}`}]), [setExams]);
+  const deleteExam        = useCallback((id) => setExams((p)=>p.filter((e)=>e.id!==id)), [setExams]);
+
+  const doneCount     = todayHabits.filter((h)=>h.done).length;
+  const totalCount    = todayHabits.length;
+  const completionPct = totalCount ? Math.round((doneCount/totalCount)*100) : 0;
+
+  // Streak: consecutive days with at least 1 habit checked
+  const streak = useMemo(() => {
+    let count = 0;
+    let best  = 0;
+    const today = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dk = d.toISOString().slice(0,10);
+      const dc = checks[dk] || {};
+      const anyDone = habits.some((h) => dc[h.id]);
+      if (i === 0 && !anyDone) { /* today not done yet — don't break */ }
+      else if (!anyDone) break;
+      else count++;
+    }
+    // best streak ever
+    let cur = 0;
+    const allDays = Object.keys(checks).sort();
+    allDays.forEach((dk) => {
+      const dc = checks[dk] || {};
+      if (habits.some((h) => dc[h.id])) { cur++; best = Math.max(best, cur); }
+      else cur = 0;
+    });
+    return { count, best };
+  }, [checks, habits]);
+
+  const last7 = useMemo(()=>Array.from({length:7},(_,i)=>{
+    const d=new Date(); d.setDate(d.getDate()-(6-i));
+    const dk=d.toISOString().slice(0,10);
+    const dc=checks[dk]||{};
+    const done=habits.filter((h)=>dc[h.id]).length;
+    return { key:dk, label:d.toLocaleDateString("pt-BR",{weekday:"short"}).slice(0,3), pct:habits.length?Math.round((done/habits.length)*100):0 };
+  }),[checks,habits]);
+
+  return (
+    <AppContext.Provider value={{
+      todayHabits,habits,goals,subtasks,library,diary,health,exams,checks,
+      toggleHabit,toggleSubtask,doneCount,totalCount,completionPct,
+      goalProgress,monthlyMetrics,last7,streak,todayKey,vision:VISION,
+      addGoal,updateGoal,deleteGoal,
+      addSubtask,deleteSubtask,
+      addHabit,updateHabit,deleteHabit,
+      addMedia,updateMedia,deleteMedia,
+      addDiaryEntry,updateDiaryEntry,deleteDiaryEntry,
+      addHealthEntry,deleteHealthEntry,setHealthGoal,
+      addExam,deleteExam,
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
+}
+const useApp = ()=>useContext(AppContext);
+
+// ── PRIMITIVES ────────────────────────────────────────────────────
+function ProgressRing({pct,size=60}){
+  const r=(size-6)/2,circ=2*Math.PI*r,offset=circ-(pct/100)*circ;
+  return(
+    <svg width={size} height={size} style={{transform:"rotate(-90deg)",flexShrink:0}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.surfaceHigh} strokeWidth={4}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={T.gold} strokeWidth={4}
+        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+        style={{transition:"stroke-dashoffset 0.5s ease"}}/>
+    </svg>
+  );
+}
+function MiniBar({pct,color,height=4}){
+  return(
+    <div style={{height,borderRadius:height/2,background:T.surfaceHigh,overflow:"hidden"}}>
+      <div style={{height:"100%",borderRadius:height/2,background:color,width:`${Math.min(pct,100)}%`,transition:"width 0.6s ease"}}/>
+    </div>
+  );
+}
+function MetricBadge({done,target,color}){
+  const pct=Math.round((done/target)*100);
+  const ok=pct>=70;
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:5,background:`${color}15`,borderRadius:8,padding:"3px 8px",flexShrink:0}}>
+      <span style={{fontSize:12,fontWeight:700,color:ok?color:T.textSub}}>{done}<span style={{color:T.textMuted,fontWeight:400}}>/{target}</span></span>
+      <span style={{fontSize:10,color:ok?color:T.textMuted}}>{pct}%</span>
+    </div>
+  );
+}
+const inp = {
+  width:"100%",background:T.surfaceHigh,border:`1px solid ${T.textMuted}`,
+  borderRadius:10,padding:"12px 14px",color:T.text,fontSize:14,
+  outline:"none",boxSizing:"border-box",fontFamily:"Inter,sans-serif",
+};
+function Btn({children,onClick,variant="gold",style={}}){
+  const vars={gold:{background:T.gold,color:"#0F1117"},ghost:{background:"transparent",color:T.textSub,border:`1px solid ${T.textMuted}`},danger:{background:`${T.danger}22`,color:T.danger}};
+  return <button onClick={onClick} style={{border:"none",borderRadius:10,fontWeight:700,fontSize:13,padding:"8px 14px",cursor:"pointer",fontFamily:"Inter,sans-serif",...vars[variant],...style}}>{children}</button>;
+}
+
+// ── HABIT ROW ─────────────────────────────────────────────────────
+function HabitRow({habit,onToggle,showGoal,monthlyMetrics,onDelete}){
+  const color=T.sectors[habit.sector];
+  const m=monthlyMetrics?.[habit.id];
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,background:habit.done?`${color}12`:"transparent",transition:"background 0.2s",position:"relative"}}>
+      {habit.done&&<div style={{position:"absolute",left:0,top:6,bottom:6,width:3,borderRadius:2,background:`linear-gradient(to bottom,${T.gold},${color})`}}/>}
+      <div onClick={()=>onToggle(habit.id)} style={{width:22,height:22,borderRadius:6,flexShrink:0,cursor:"pointer",border:`2px solid ${habit.done?color:T.textMuted}`,background:habit.done?color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+        {habit.done&&<span style={{color:"#fff",fontSize:13,fontWeight:700}}>✓</span>}
+      </div>
+      <div style={{flex:1,minWidth:0}} onClick={()=>onToggle(habit.id)}>
+        <p style={{margin:0,fontSize:14,color:habit.done?T.textSub:T.text,textDecoration:habit.done?"line-through":"none",lineHeight:1.3,cursor:"pointer"}}>{habit.label}</p>
+        {showGoal&&habit.goal&&<p style={{margin:"2px 0 0",fontSize:11,color,lineHeight:1.2}}>↳ {habit.goal.title}</p>}
+      </div>
+      {m&&<MetricBadge done={m.done} target={m.target} color={color}/>}
+      {onDelete&&<button onClick={()=>onDelete(habit.id)} style={{background:"none",border:"none",color:T.textMuted,fontSize:16,cursor:"pointer",padding:"0 2px",flexShrink:0}}>×</button>}
+    </div>
+  );
+}
+
+// ── HOME ──────────────────────────────────────────────────────────
+function HomeScreen(){
+  const {todayHabits,toggleHabit,doneCount,totalCount,completionPct,goals,goalProgress,monthlyMetrics,streak}=useApp();
+  const now=new Date();
+  const dayName=now.toLocaleDateString("pt-BR",{weekday:"long"});
+  const dateStr=now.toLocaleDateString("pt-BR",{day:"numeric",month:"long"});
+  const greeting=now.getHours()<12?"Bom dia":now.getHours()<18?"Boa tarde":"Boa noite";
+  const sectors=[...new Set(todayHabits.map((h)=>h.sector))];
+  const goalsBrickedToday=goals.filter((g)=>todayHabits.some((h)=>h.goalId===g.id&&h.done));
+
+  // Streak fire intensity
+  const fireEmoji = streak.count >= 30 ? "🔥🔥🔥" : streak.count >= 14 ? "🔥🔥" : streak.count >= 3 ? "🔥" : "✦";
+  const streakMsg = streak.count === 0 ? "Comece hoje" : streak.count === 1 ? "1 dia — continue amanhã!" : `${streak.count} dias seguidos`;
+
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 12px"}}>
+        <p style={{fontSize:12,color:T.textSub,margin:0,textTransform:"capitalize",letterSpacing:"0.05em"}}>{dayName}, {dateStr}</p>
+        <h1 style={{fontSize:26,fontFamily:"'Playfair Display',serif",color:T.text,margin:"4px 0 0",fontWeight:700,lineHeight:1.2}}>{greeting}, Rafael</h1>
+        <p style={{fontSize:13,color:T.gold,margin:"6px 0 0",fontStyle:"italic"}}>"Todo dia, um tijolo."</p>
+      </div>
+
+      {/* Streak bar */}
+      <div style={{padding:"0 12px 12px"}}>
+        <div style={{
+          background:`linear-gradient(135deg, ${T.surface}, #1E2438)`,
+          borderRadius:14, padding:"12px 16px",
+          display:"flex", alignItems:"center", gap:14,
+          border:`1px solid ${streak.count >= 3 ? T.goldDim+"66" : T.surfaceHigh}`,
+        }}>
+          <div style={{textAlign:"center",flexShrink:0}}>
+            <div style={{fontSize:28,lineHeight:1}}>{fireEmoji}</div>
+          </div>
+          <div style={{flex:1}}>
+            <p style={{margin:0,fontSize:18,fontWeight:700,color:streak.count>=3?T.gold:T.text}}>{streakMsg}</p>
+            <p style={{margin:"2px 0 0",fontSize:11,color:T.textMuted}}>
+              Melhor sequência: {streak.best} dia{streak.best!==1?"s":""}
+            </p>
+          </div>
+          {/* Last 7 days dots */}
+          <div style={{display:"flex",gap:4,flexShrink:0}}>
+            {Array.from({length:7},(_,i)=>{
+              const d=new Date(); d.setDate(d.getDate()-(6-i));
+              const dk=d.toISOString().slice(0,10);
+              return dk;
+            }).map((dk,i)=>{
+              const isToday=dk===new Date().toISOString().slice(0,10);
+              const active=isToday?doneCount>0:false; // simplified dot
+              return(
+                <div key={i} style={{
+                  width:7,height:7,borderRadius:"50%",
+                  background: isToday&&doneCount>0 ? T.gold : T.surfaceHigh,
+                  border: isToday ? `1px solid ${T.gold}` : "none",
+                  transition:"background 0.3s",
+                }}/>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Sunday review nudge */}
+      {new Date().getDay()===0&&(
+        <div style={{padding:"0 12px 12px"}}>
+          <div onClick={()=>{}} style={{
+            background:`linear-gradient(135deg,${T.gold}22,${T.goldDim}11)`,
+            borderRadius:14,padding:"12px 16px",
+            border:`1px solid ${T.gold}44`,
+            display:"flex",alignItems:"center",gap:12,cursor:"pointer",
+          }}>
+            <span style={{fontSize:24}}>🗓</span>
+            <div style={{flex:1}}>
+              <p style={{margin:0,fontSize:14,fontWeight:700,color:T.gold}}>Hoje é domingo</p>
+              <p style={{margin:"2px 0 0",fontSize:12,color:T.textSub}}>Hora de revisar sua semana</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Progress card */}
+      <div style={{padding:"0 12px 14px"}}>
+        <div style={{background:T.surface,borderRadius:18,padding:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <div style={{position:"relative"}}>
+              <ProgressRing pct={completionPct} size={62}/>
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,color:T.gold}}>{completionPct}%</div>
+            </div>
+            <div style={{flex:1}}>
+              <p style={{margin:0,fontSize:20,fontWeight:700,color:T.text}}>{doneCount}/{totalCount} hábitos</p>
+              <p style={{margin:"2px 0 0",fontSize:12,color:T.textSub}}>
+                {completionPct===100?"🔥 Dia completo!":doneCount===0?"Coloque o primeiro tijolo hoje":`${totalCount-doneCount} tijolos restantes`}
+              </p>
+            </div>
+          </div>
+          {goalsBrickedToday.length>0&&(
+            <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.surfaceHigh}`}}>
+              <p style={{margin:"0 0 8px",fontSize:11,color:T.textMuted,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Obras que avançaram hoje</p>
+              {goalsBrickedToday.map((g)=>{
+                const color=T.sectors[g.sector],pct=goalProgress[g.id]||0;
+                return(
+                  <div key={g.id} style={{marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                      <span style={{fontSize:12,color:T.text,flex:1,lineHeight:1.3}}>🧱 {g.title}</span>
+                      <span style={{fontSize:12,fontWeight:700,color,marginLeft:8}}>{pct}%</span>
+                    </div>
+                    <MiniBar pct={pct} color={color} height={3}/>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Habits */}
+      <div style={{background:T.surface,borderRadius:20,margin:"0 12px",overflow:"hidden"}}>
+        {sectors.map((sector,si)=>{
+          const sh=todayHabits.filter((h)=>h.sector===sector);
+          const color=T.sectors[sector];
+          const done=sh.filter((h)=>h.done).length;
+          return(
+            <div key={sector} style={{borderTop:si>0?`1px solid ${T.surfaceHigh}`:"none"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px 4px"}}>
+                <span style={{fontSize:14,color,fontWeight:700}}>{SECTOR_ICONS[sector]}</span>
+                <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",color:T.textSub,textTransform:"uppercase",flex:1}}>{SECTOR_LABELS[sector]}</span>
+                <span style={{fontSize:11,color:done===sh.length?color:T.textMuted}}>{done}/{sh.length}</span>
+              </div>
+              {sh.map((h)=><HabitRow key={h.id} habit={h} onToggle={toggleHabit} showGoal monthlyMetrics={monthlyMetrics}/>)}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{padding:"14px 12px 0"}}>
+        <div style={{background:T.surface,borderRadius:16,padding:16,borderLeft:`3px solid ${T.gold}`}}>
+          <p style={{margin:0,fontSize:11,color:T.gold,fontWeight:700,letterSpacing:"0.08em"}}>PALAVRA DO DIA</p>
+          <p style={{margin:"8px 0 4px",fontSize:15,color:T.text,fontFamily:"'Playfair Display',serif",lineHeight:1.6}}>"Tudo posso naquele que me fortalece."</p>
+          <p style={{margin:0,fontSize:12,color:T.textSub}}>Filipenses 4:13</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── GOAL CARD ─────────────────────────────────────────────────────
+function GoalCard({goal,onUpdate,onDelete,habits,subtasks,todayHabits,goalProgress,monthlyMetrics,onAddSubtask,onToggleSubtask,onDeleteSubtask,onAddHabit,onUpdateHabit,onDeleteHabit}){
+  const [mode,setMode]=useState(null);
+  const [editForm,setEditForm]=useState({title:goal.title,deadline:goal.deadline,sector:goal.sector});
+  const [newSub,setNewSub]=useState("");
+  const [newHabit,setNewHabit]=useState({label:"",targetPerWeek:4});
+  const color=T.sectors[goal.sector];
+  const pct=goalProgress[goal.id]||0;
+  const gSubs=subtasks.filter((s)=>s.goalId===goal.id);
+  const gHabits=habits.filter((h)=>h.goalId===goal.id);
+  const doneTodayCount=todayHabits.filter((h)=>h.goalId===goal.id&&h.done).length;
+  const subsDone=gSubs.filter((s)=>s.done).length;
+
+  return(
+    <div style={{background:T.surface,borderRadius:16,marginBottom:10,overflow:"hidden",borderTop:`3px solid ${color}`}}>
+      {/* Header */}
+      <div style={{padding:"14px 14px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <p style={{margin:0,fontSize:15,color:T.text,fontWeight:600,flex:1,lineHeight:1.3}}>{goal.title}</p>
+          <span style={{fontSize:18,fontWeight:700,color,marginLeft:10,flexShrink:0}}>{pct}%</span>
+        </div>
+        <MiniBar pct={pct} color={color} height={5}/>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:8,alignItems:"center",flexWrap:"wrap",gap:4}}>
+          <span style={{fontSize:11,color:T.textMuted}}>
+            {gHabits.length} hábito{gHabits.length!==1?"s":""} · {subsDone}/{gSubs.length} submetas
+            {goal.deadline?` · até ${new Date(goal.deadline+"T12:00:00").toLocaleDateString("pt-BR",{day:"numeric",month:"short"})}` :""}
+          </span>
+          {doneTodayCount>0&&<span style={{fontSize:11,color,fontWeight:700}}>🧱 {doneTodayCount} hoje</span>}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",borderTop:`1px solid ${T.surfaceHigh}`,overflowX:"auto"}}>
+        {[{id:"edit",label:"✎ Editar"},{id:"subtasks",label:`◈ Submetas (${gSubs.length})`},{id:"habits",label:`◉ Hábitos (${gHabits.length})`}].map((btn)=>(
+          <button key={btn.id} onClick={()=>setMode(mode===btn.id?null:btn.id)} style={{flex:1,background:"none",border:"none",cursor:"pointer",padding:"9px 6px",fontSize:11,fontWeight:700,color:mode===btn.id?color:T.textSub,borderBottom:mode===btn.id?`2px solid ${color}`:"2px solid transparent",whiteSpace:"nowrap",transition:"color 0.2s"}}>{btn.label}</button>
+        ))}
+        <button onClick={()=>{if(window.confirm("Excluir esta meta?"))onDelete(goal.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:"9px 10px",fontSize:14,color:T.textMuted,borderLeft:`1px solid ${T.surfaceHigh}`}}>🗑</button>
+      </div>
+
+      {/* Edit */}
+      {mode==="edit"&&(
+        <div style={{padding:14,borderTop:`1px solid ${T.surfaceHigh}`,display:"flex",flexDirection:"column",gap:8}}>
+          <select value={editForm.sector} onChange={(e)=>setEditForm({...editForm,sector:e.target.value})} style={inp}>
+            {Object.entries(SECTOR_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+          <input value={editForm.title} onChange={(e)=>setEditForm({...editForm,title:e.target.value})} placeholder="Título" style={inp}/>
+          <input type="date" value={editForm.deadline} onChange={(e)=>setEditForm({...editForm,deadline:e.target.value})} style={inp}/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>{if(editForm.title){onUpdate(goal.id,editForm);setMode(null);}}} style={{flex:1,padding:10}}>Salvar</Btn>
+            <Btn onClick={()=>setMode(null)} variant="ghost" style={{flex:1,padding:10}}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Submetas */}
+      {mode==="subtasks"&&(
+        <div style={{padding:14,borderTop:`1px solid ${T.surfaceHigh}`}}>
+          <p style={{margin:"0 0 10px",fontSize:11,color:T.textSub,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Marcos do caminho</p>
+          {gSubs.length===0&&<p style={{fontSize:13,color:T.textMuted,marginBottom:10}}>Nenhum marco ainda.</p>}
+          {gSubs.map((s)=>(
+            <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <div onClick={()=>onToggleSubtask(s.id)} style={{width:20,height:20,borderRadius:5,flexShrink:0,cursor:"pointer",border:`2px solid ${s.done?color:T.textMuted}`,background:s.done?color:"transparent",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s"}}>
+                {s.done&&<span style={{color:"#fff",fontSize:12,fontWeight:700}}>✓</span>}
+              </div>
+              <span style={{flex:1,fontSize:14,color:s.done?T.textMuted:T.text,textDecoration:s.done?"line-through":"none"}}>{s.title}</span>
+              <button onClick={()=>onDeleteSubtask(s.id)} style={{background:"none",border:"none",color:T.textMuted,fontSize:16,cursor:"pointer",padding:"0 2px"}}>×</button>
+            </div>
+          ))}
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <input value={newSub} onChange={(e)=>setNewSub(e.target.value)}
+              onKeyDown={(e)=>{if(e.key==="Enter"&&newSub){onAddSubtask({goalId:goal.id,title:newSub});setNewSub("");}}}
+              placeholder="Novo marco..." style={{...inp,flex:1,padding:"10px 12px"}}/>
+            <Btn onClick={()=>{if(newSub){onAddSubtask({goalId:goal.id,title:newSub});setNewSub("");}}} style={{padding:"10px 14px"}}>+</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Hábitos */}
+      {mode==="habits"&&(
+        <div style={{padding:14,borderTop:`1px solid ${T.surfaceHigh}`}}>
+          <p style={{margin:"0 0 10px",fontSize:11,color:T.textSub,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Tijolos diários desta obra</p>
+          {gHabits.length===0&&<p style={{fontSize:13,color:T.textMuted,marginBottom:10}}>Nenhum hábito vinculado.</p>}
+          {gHabits.map((h)=>{
+            const m=monthlyMetrics[h.id];
+            const hColor=T.sectors[h.sector];
+            return(
+              <div key={h.id} style={{marginBottom:10,background:T.surfaceHigh,borderRadius:10,padding:"10px 12px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{width:8,height:8,borderRadius:2,flexShrink:0,background:todayHabits.find((t)=>t.id===h.id)?.done?hColor:T.textMuted}}/>
+                  <span style={{flex:1,fontSize:14,color:T.text,fontWeight:500}}>{h.label}</span>
+                  <button onClick={()=>onDeleteHabit(h.id)} style={{background:"none",border:"none",color:T.textMuted,fontSize:15,cursor:"pointer",padding:0}}>×</button>
+                </div>
+                {/* Monthly metric */}
+                {m&&(
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{flex:1}}>
+                      <MiniBar pct={m.pct} color={hColor} height={4}/>
+                    </div>
+                    <span style={{fontSize:12,fontWeight:700,color:m.pct>=70?hColor:T.textSub,flexShrink:0}}>
+                      {m.done}/{m.target} este mês
+                    </span>
+                  </div>
+                )}
+                {/* Target frequency editor */}
+                <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8}}>
+                  <span style={{fontSize:11,color:T.textMuted}}>Meta:</span>
+                  <select value={h.targetPerWeek} onChange={(e)=>onUpdateHabit(h.id,{targetPerWeek:Number(e.target.value)})}
+                    style={{background:T.bg,border:`1px solid ${T.textMuted}`,borderRadius:6,padding:"3px 6px",color:T.text,fontSize:12,outline:"none"}}>
+                    {[1,2,3,4,5,6,7].map((n)=><option key={n} value={n}>{n}x/semana</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          })}
+          {/* Add habit */}
+          <div style={{marginTop:8,background:T.surfaceHigh,borderRadius:10,padding:12}}>
+            <input value={newHabit.label} onChange={(e)=>setNewHabit({...newHabit,label:e.target.value})}
+              placeholder="Nome do hábito..." style={{...inp,background:T.bg,marginBottom:8,padding:"10px 12px"}}/>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:12,color:T.textMuted,flexShrink:0}}>Frequência:</span>
+              <select value={newHabit.targetPerWeek} onChange={(e)=>setNewHabit({...newHabit,targetPerWeek:Number(e.target.value)})}
+                style={{background:T.bg,border:`1px solid ${T.textMuted}`,borderRadius:6,padding:"6px 10px",color:T.text,fontSize:13,outline:"none",flex:1}}>
+                {[1,2,3,4,5,6,7].map((n)=><option key={n} value={n}>{n}x por semana</option>)}
+              </select>
+              <Btn onClick={()=>{if(newHabit.label){onAddHabit({label:newHabit.label,goalId:goal.id,sector:goal.sector,targetPerWeek:newHabit.targetPerWeek});setNewHabit({label:"",targetPerWeek:4});}}} style={{padding:"8px 14px"}}>+</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── METAS ─────────────────────────────────────────────────────────
+function GoalsScreen(){
+  const {goals,habits,subtasks,todayHabits,goalProgress,monthlyMetrics,addGoal,updateGoal,deleteGoal,addSubtask,toggleSubtask,deleteSubtask,addHabit,updateHabit,deleteHabit}=useApp();
+  const [adding,setAdding]=useState(false);
+  const [form,setForm]=useState({sector:"espiritual",title:"",deadline:""});
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div>
+          <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:0}}>Metas</h2>
+          <p style={{fontSize:13,color:T.textSub,margin:"4px 0 0"}}>Cada hábito é um tijolo destas obras</p>
+        </div>
+        <Btn onClick={()=>setAdding(!adding)}>+ Meta</Btn>
+      </div>
+      {adding&&(
+        <div style={{margin:"0 12px 14px",background:T.surface,borderRadius:16,padding:16}}>
+          <select value={form.sector} onChange={(e)=>setForm({...form,sector:e.target.value})} style={inp}>
+            {Object.entries(SECTOR_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+          <input placeholder="Título da meta" value={form.title} onChange={(e)=>setForm({...form,title:e.target.value})} style={{...inp,marginTop:8}}/>
+          <input type="date" value={form.deadline} onChange={(e)=>setForm({...form,deadline:e.target.value})} style={{...inp,marginTop:8}}/>
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <Btn onClick={()=>{if(form.title){addGoal(form);setAdding(false);setForm({sector:"espiritual",title:"",deadline:""});}}} style={{flex:1,padding:11}}>Salvar</Btn>
+            <Btn onClick={()=>setAdding(false)} variant="ghost" style={{flex:1,padding:11}}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
+      {Object.keys(SECTOR_LABELS).map((sector)=>{
+        const sg=goals.filter((g)=>g.sector===sector);
+        if(!sg.length)return null;
+        const color=T.sectors[sector];
+        return(
+          <div key={sector} style={{margin:"0 12px 8px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 4px 8px"}}>
+              <span style={{fontSize:14,color}}>{SECTOR_ICONS[sector]}</span>
+              <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",color:T.textSub,textTransform:"uppercase"}}>{SECTOR_LABELS[sector]}</span>
+            </div>
+            {sg.map((g)=>(
+              <GoalCard key={g.id} goal={g} onUpdate={updateGoal} onDelete={deleteGoal}
+                habits={habits} subtasks={subtasks} todayHabits={todayHabits}
+                goalProgress={goalProgress} monthlyMetrics={monthlyMetrics}
+                onAddSubtask={addSubtask} onToggleSubtask={toggleSubtask} onDeleteSubtask={deleteSubtask}
+                onAddHabit={addHabit} onUpdateHabit={updateHabit} onDeleteHabit={deleteHabit}/>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── BIBLIOTECA ────────────────────────────────────────────────────
+function LibraryScreen(){
+  const {library,goals,addMedia,updateMedia,deleteMedia}=useApp();
+  const [adding,setAdding]=useState(false);
+  const [filter,setFilter]=useState("Todos");
+  const [form,setForm]=useState({type:"Livro",sector:"desenvolvimento",goalId:"",title:"",author:"",status:"Quero ler",notes:""});
+  const filters=["Todos",...MEDIA_TYPES];
+  const visible=filter==="Todos"?library:library.filter((b)=>b.type===filter);
+
+  const statusColor={["Quero ler"]:T.textMuted,["Em andamento"]:T.gold,["Concluído"]:T.success};
+
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div>
+          <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:0}}>Biblioteca</h2>
+          <p style={{fontSize:13,color:T.textSub,margin:"4px 0 0"}}>O que nutre cada área da sua vida</p>
+        </div>
+        <Btn onClick={()=>setAdding(!adding)}>+ Novo</Btn>
+      </div>
+
+      {/* Filter pills */}
+      <div style={{display:"flex",gap:8,padding:"0 12px 14px",overflowX:"auto"}}>
+        {filters.map((f)=>(
+          <button key={f} onClick={()=>setFilter(f)} style={{background:filter===f?T.gold:T.surface,color:filter===f?"#0F1117":T.textSub,border:"none",borderRadius:20,padding:"6px 14px",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+            {f==="Todos"?f:`${MEDIA_ICONS[f]} ${f}`}
+          </button>
+        ))}
+      </div>
+
+      {/* Stats bar */}
+      <div style={{margin:"0 12px 14px",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {MEDIA_STATUS.map((s)=>{
+          const cnt=library.filter((b)=>b.status===s).length;
+          return(
+            <div key={s} style={{background:T.surface,borderRadius:12,padding:"10px 12px",textAlign:"center"}}>
+              <p style={{margin:0,fontSize:20,fontWeight:700,color:statusColor[s]}}>{cnt}</p>
+              <p style={{margin:"2px 0 0",fontSize:10,color:T.textMuted}}>{s}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add form */}
+      {adding&&(
+        <div style={{margin:"0 12px 14px",background:T.surface,borderRadius:16,padding:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <select value={form.type} onChange={(e)=>setForm({...form,type:e.target.value})} style={inp}>
+              {MEDIA_TYPES.map((t)=><option key={t}>{t}</option>)}
+            </select>
+            <select value={form.status} onChange={(e)=>setForm({...form,status:e.target.value})} style={inp}>
+              {MEDIA_STATUS.map((s)=><option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <select value={form.sector} onChange={(e)=>setForm({...form,sector:e.target.value})} style={{...inp,marginBottom:8}}>
+            {Object.entries(SECTOR_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          </select>
+          <select value={form.goalId} onChange={(e)=>setForm({...form,goalId:e.target.value})} style={{...inp,marginBottom:8}}>
+            <option value="">Meta relacionada (opcional)</option>
+            {goals.map((g)=><option key={g.id} value={g.id}>{g.title}</option>)}
+          </select>
+          <input placeholder="Título" value={form.title} onChange={(e)=>setForm({...form,title:e.target.value})} style={{...inp,marginBottom:8}}/>
+          <input placeholder="Autor / Canal / Fonte" value={form.author} onChange={(e)=>setForm({...form,author:e.target.value})} style={{...inp,marginBottom:8}}/>
+          <textarea placeholder="Notas / O que espero aprender" value={form.notes} onChange={(e)=>setForm({...form,notes:e.target.value})} rows={2} style={{...inp,resize:"none",marginBottom:8}}/>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>{if(form.title){addMedia(form);setAdding(false);setForm({type:"Livro",sector:"desenvolvimento",goalId:"",title:"",author:"",status:"Quero ler",notes:""});}}} style={{flex:1,padding:11}}>Salvar</Btn>
+            <Btn onClick={()=>setAdding(false)} variant="ghost" style={{flex:1,padding:11}}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Library list */}
+      <div style={{padding:"0 12px"}}>
+        {visible.length===0&&(
+          <div style={{background:T.surface,borderRadius:16,padding:24,textAlign:"center"}}>
+            <p style={{color:T.textMuted,fontSize:14}}>Nenhum item aqui ainda.</p>
+          </div>
+        )}
+        {visible.map((b)=>{
+          const color=T.sectors[b.sector]||T.gold;
+          const sColor=statusColor[b.status];
+          const g=goals.find((g)=>g.id===b.goalId);
+          return(
+            <div key={b.id} style={{background:T.surface,borderRadius:14,padding:14,marginBottom:10,borderLeft:`3px solid ${color}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                    <span style={{fontSize:14}}>{MEDIA_ICONS[b.type]}</span>
+                    <span style={{fontSize:10,fontWeight:700,color,letterSpacing:"0.08em",textTransform:"uppercase"}}>{b.type}</span>
+                    <span style={{fontSize:10,color:T.textMuted}}>·</span>
+                    <span style={{fontSize:10,fontWeight:700,color:sColor}}>{b.status}</span>
+                  </div>
+                  <p style={{margin:0,fontSize:15,fontWeight:600,color:T.text,lineHeight:1.3}}>{b.title}</p>
+                  {b.author&&<p style={{margin:"2px 0 0",fontSize:12,color:T.textSub}}>{b.author}</p>}
+                  {g&&<p style={{margin:"4px 0 0",fontSize:11,color}}> ↳ {g.title}</p>}
+                </div>
+                <button onClick={()=>deleteMedia(b.id)} style={{background:"none",border:"none",color:T.textMuted,fontSize:15,cursor:"pointer",padding:"0 0 0 8px",flexShrink:0}}>×</button>
+              </div>
+              {b.notes&&<p style={{margin:"6px 0 0",fontSize:13,color:T.textSub,lineHeight:1.5}}>{b.notes}</p>}
+              {/* Status toggle */}
+              <div style={{display:"flex",gap:6,marginTop:10}}>
+                {MEDIA_STATUS.map((s)=>(
+                  <button key={s} onClick={()=>updateMedia(b.id,{status:s})} style={{flex:1,background:b.status===s?`${statusColor[s]}22`:"transparent",border:`1px solid ${b.status===s?statusColor[s]:T.textMuted}`,borderRadius:8,padding:"5px 4px",fontSize:10,color:b.status===s?statusColor[s]:T.textMuted,cursor:"pointer",fontWeight:b.status===s?700:400,lineHeight:1.2}}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── EVOLUÇÃO ─────────────────────────────────────────────────────
+function DashboardScreen(){
+  const {todayHabits,goals,library,last7,goalProgress,doneCount,totalCount,streak}=useApp();
+  const avgPct=Math.round(last7.reduce((a,d)=>a+d.pct,0)/7);
+  const maxBar=80;
+  const booksRead=library.filter((b)=>b.status==="Concluído").length;
+  const booksActive=library.filter((b)=>b.status==="Em andamento").length;
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 16px"}}>
+        <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:0}}>Evolução</h2>
+        <p style={{fontSize:13,color:T.textSub,margin:"4px 0 0"}}>A parede que você está construindo</p>
+      </div>
+      {/* 7-day bars */}
+      <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:16,padding:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <p style={{margin:0,fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.1em",textTransform:"uppercase"}}>Últimos 7 dias</p>
+          <span style={{fontSize:16,fontWeight:700,color:T.gold}}>{avgPct}% média</span>
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:6,height:maxBar+20}}>
+          {last7.map((d)=>{
+            const barH=Math.max((d.pct/100)*maxBar,4);
+            const isToday=d.key===new Date().toISOString().slice(0,10);
+            const brickColor=d.pct>=80?T.gold:d.pct>=50?T.goldDim:T.surfaceHigh;
+            return(
+              <div key={d.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                <div style={{width:"100%",height:barH,borderRadius:"4px 4px 0 0",background:brickColor,border:isToday?`1px solid ${T.gold}`:"none",transition:"height 0.5s ease"}}/>
+                <span style={{fontSize:10,color:isToday?T.gold:T.textMuted,fontWeight:isToday?700:400}}>{d.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {/* KPIs */}
+      <div style={{margin:"0 12px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        {[
+          {label:"Hoje",        val:`${doneCount}/${totalCount}`, color:T.gold},
+          {label:"Sequência 🔥", val:`${streak.count} dias`,      color:T.sectors.espiritual},
+          {label:"Melhor",      val:`${streak.best} dias`,        color:T.goldDim},
+          {label:"Concluídos",  val:booksRead,                    color:T.sectors.desenvolvimento},
+        ].map((k)=>(
+          <div key={k.label} style={{background:T.surface,borderRadius:14,padding:16}}>
+            <p style={{margin:0,fontSize:22,fontWeight:700,color:k.color}}>{k.val}</p>
+            <p style={{margin:"4px 0 0",fontSize:12,color:T.textSub}}>{k.label}</p>
+          </div>
+        ))}
+      </div>
+      {/* Goals */}
+      <div style={{margin:"0 12px",background:T.surface,borderRadius:16,padding:16}}>
+        <p style={{margin:"0 0 14px",fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.1em",textTransform:"uppercase"}}>Obras em andamento</p>
+        {goals.map((g)=>{
+          const color=T.sectors[g.sector],pct=goalProgress[g.id]||0;
+          return(
+            <div key={g.id} style={{marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontSize:13,color:T.text,flex:1,lineHeight:1.3}}>{SECTOR_ICONS[g.sector]} {g.title}</span>
+                <span style={{fontSize:13,fontWeight:700,color,marginLeft:8}}>{pct}%</span>
+              </div>
+              <MiniBar pct={pct} color={color} height={4}/>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── VISÃO ─────────────────────────────────────────────────────────
+function VisionScreen(){
+  const {vision}=useApp();
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 16px"}}>
+        <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:0}}>Visão de Vida</h2>
+        <p style={{fontSize:13,color:T.textSub,margin:"4px 0 0"}}>O norte que guia cada tijolo</p>
+      </div>
+      <div style={{margin:"0 12px"}}>
+        <div style={{background:T.surface,borderRadius:20,padding:20,borderTop:`3px solid ${T.gold}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+            <span style={{fontSize:20,color:T.gold}}>✦</span>
+            <span style={{fontSize:12,fontWeight:700,color:T.gold,letterSpacing:"0.12em",textTransform:"uppercase"}}>Minha Declaração</span>
+          </div>
+          {vision.split("\n\n").map((para,i,arr)=>(
+            <p key={i} style={{fontSize:15,color:T.text,lineHeight:1.75,fontFamily:"'Playfair Display',serif",margin:i<arr.length-1?"0 0 16px":0}}>{para}</p>
+          ))}
+        </div>
+        <div style={{background:T.surface,borderRadius:16,padding:16,marginTop:12}}>
+          <p style={{margin:"0 0 12px",fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.1em",textTransform:"uppercase"}}>Setores da Vida</p>
+          {Object.entries(SECTOR_LABELS).map(([k,v],i,arr)=>(
+            <div key={k} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:i<arr.length-1?`1px solid ${T.surfaceHigh}`:"none"}}>
+              <span style={{fontSize:16,color:T.sectors[k],width:24,textAlign:"center"}}>{SECTOR_ICONS[k]}</span>
+              <span style={{fontSize:14,color:T.text}}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── DIÁRIO ────────────────────────────────────────────────────────
+const MOODS = [
+  { id:"excelente", label:"Excelente", emoji:"🔥", color:"#C9A84C" },
+  { id:"bem",       label:"Bem",       emoji:"😊", color:"#5CB88A" },
+  { id:"neutro",    label:"Neutro",    emoji:"😐", color:"#7A8099" },
+  { id:"cansado",   label:"Cansado",   emoji:"😔", color:"#A07BE0" },
+  { id:"dificil",   label:"Difícil",   emoji:"⛈",  color:"#E05C5C" },
+];
+
+function DiaryScreen(){
+  const {diary,goals,addDiaryEntry,updateDiaryEntry,deleteDiaryEntry,todayKey,doneCount,totalCount,completionPct}=useApp();
+  const [writing,setWriting]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [search,setSearch]=useState("");
+  const [form,setForm]=useState({
+    date: todayKey,
+    mood: "bem",
+    title: "",
+    text: "",
+    gratitude: "",
+    goalId: "",
+    intention: "",
+  });
+
+  const sorted=[...diary].sort((a,b)=>b.date.localeCompare(a.date));
+  const filtered=search ? sorted.filter((e)=>
+    e.text?.toLowerCase().includes(search.toLowerCase()) ||
+    e.title?.toLowerCase().includes(search.toLowerCase()) ||
+    e.gratitude?.toLowerCase().includes(search.toLowerCase())
+  ) : sorted;
+
+  const todayEntry=diary.find((e)=>e.date===todayKey);
+
+  const openNew=()=>{
+    setForm({date:todayKey,mood:"bem",title:"",text:"",gratitude:"",goalId:"",intention:""});
+    setEditing(null);
+    setWriting(true);
+  };
+  const openEdit=(e)=>{
+    setForm({...e});
+    setEditing(e.id);
+    setWriting(true);
+  };
+  const save=()=>{
+    if(!form.text && !form.gratitude) return;
+    if(editing) { updateDiaryEntry(editing,form); }
+    else { addDiaryEntry(form); }
+    setWriting(false);
+    setEditing(null);
+  };
+
+  const moodOf=(id)=>MOODS.find((m)=>m.id===id)||MOODS[1];
+
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 16px",display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <div>
+          <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:0}}>Diário</h2>
+          <p style={{fontSize:13,color:T.textSub,margin:"4px 0 0"}}>
+            {diary.length} {diary.length===1?"entrada":"entradas"} · sua história em construção
+          </p>
+        </div>
+        {!todayEntry
+          ? <Btn onClick={openNew}>✍ Hoje</Btn>
+          : <Btn onClick={()=>openEdit(todayEntry)} variant="ghost">✎ Editar</Btn>
+        }
+      </div>
+
+      {/* Today prompt if no entry yet */}
+      {!todayEntry && !writing && (
+        <div style={{margin:"0 12px 14px",background:`linear-gradient(135deg,${T.surface},#1E2438)`,borderRadius:16,padding:20,borderTop:`3px solid ${T.gold}`}}>
+          <p style={{margin:"0 0 6px",fontSize:13,color:T.gold,fontWeight:700,letterSpacing:"0.06em"}}>REFLEXÃO DO DIA</p>
+          <p style={{margin:"0 0 14px",fontSize:15,color:T.text,fontFamily:"'Playfair Display',serif",lineHeight:1.6}}>
+            "Como foi hoje? O que você aprendeu? O que agradecer?"
+          </p>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+            <span style={{fontSize:12,color:T.textSub}}>{completionPct}% dos hábitos concluídos hoje</span>
+            <span style={{fontSize:12,color:T.gold,fontWeight:700}}>{doneCount}/{totalCount} hábitos</span>
+          </div>
+          <Btn onClick={openNew} style={{width:"100%",padding:12}}>Escrever reflexão de hoje</Btn>
+        </div>
+      )}
+
+      {/* Write / Edit form */}
+      {writing && (
+        <div style={{margin:"0 12px 14px",background:T.surface,borderRadius:16,padding:16}}>
+          <p style={{margin:"0 0 14px",fontSize:12,fontWeight:700,color:T.gold,letterSpacing:"0.08em",textTransform:"uppercase"}}>
+            {editing?"Editar entrada":"Nova entrada"}
+          </p>
+
+          {/* Date */}
+          <input type="date" value={form.date}
+            onChange={(e)=>setForm({...form,date:e.target.value})}
+            style={{...inp,marginBottom:10}}/>
+
+          {/* Mood picker */}
+          <p style={{margin:"0 0 8px",fontSize:11,color:T.textSub,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Como foi o dia?</p>
+          <div style={{display:"flex",gap:6,marginBottom:14}}>
+            {MOODS.map((m)=>(
+              <button key={m.id} onClick={()=>setForm({...form,mood:m.id})} style={{
+                flex:1,background:form.mood===m.id?`${m.color}22`:"transparent",
+                border:`1px solid ${form.mood===m.id?m.color:T.textMuted}`,
+                borderRadius:10,padding:"8px 4px",cursor:"pointer",
+                display:"flex",flexDirection:"column",alignItems:"center",gap:3,
+              }}>
+                <span style={{fontSize:18}}>{m.emoji}</span>
+                <span style={{fontSize:9,color:form.mood===m.id?m.color:T.textMuted,fontWeight:form.mood===m.id?700:400}}>{m.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Title optional */}
+          <input placeholder="Título (opcional)" value={form.title}
+            onChange={(e)=>setForm({...form,title:e.target.value})}
+            style={{...inp,marginBottom:10}}/>
+
+          {/* Gratitude */}
+          <p style={{margin:"0 0 6px",fontSize:11,color:T.textSub,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Gratidão</p>
+          <textarea placeholder="Pelo que você é grato hoje?" value={form.gratitude}
+            onChange={(e)=>setForm({...form,gratitude:e.target.value})}
+            rows={2} style={{...inp,resize:"none",marginBottom:10}}/>
+
+          {/* Reflection */}
+          <p style={{margin:"0 0 6px",fontSize:11,color:T.textSub,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Reflexão</p>
+          <textarea placeholder="O que aconteceu? O que aprendeu? Como se sentiu?" value={form.text}
+            onChange={(e)=>setForm({...form,text:e.target.value})}
+            rows={4} style={{...inp,resize:"none",marginBottom:10}}/>
+
+          {/* Intention */}
+          <p style={{margin:"0 0 6px",fontSize:11,color:T.textSub,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Intenção para amanhã</p>
+          <textarea placeholder="O que farei diferente amanhã?" value={form.intention}
+            onChange={(e)=>setForm({...form,intention:e.target.value})}
+            rows={2} style={{...inp,resize:"none",marginBottom:14}}/>
+
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={save} style={{flex:1,padding:12}}>Salvar</Btn>
+            <Btn onClick={()=>setWriting(false)} variant="ghost" style={{flex:1,padding:12}}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Search */}
+      {diary.length > 3 && !writing && (
+        <div style={{padding:"0 12px 12px"}}>
+          <input placeholder="🔍 Buscar nas entradas..." value={search}
+            onChange={(e)=>setSearch(e.target.value)}
+            style={{...inp}}/>
+        </div>
+      )}
+
+      {/* Entries timeline */}
+      <div style={{padding:"0 12px"}}>
+        {filtered.length===0 && !writing && (
+          <div style={{background:T.surface,borderRadius:16,padding:24,textAlign:"center"}}>
+            <p style={{fontSize:32,margin:"0 0 8px"}}>📖</p>
+            <p style={{color:T.textMuted,fontSize:14}}>Sua história começa aqui.</p>
+            <p style={{color:T.textSub,fontSize:13,marginTop:4}}>Escreva sua primeira reflexão.</p>
+          </div>
+        )}
+        {filtered.map((e,i)=>{
+          const mood=moodOf(e.mood);
+          const isToday=e.date===todayKey;
+          return(
+            <div key={e.id} style={{
+              background:T.surface,borderRadius:16,padding:16,marginBottom:12,
+              borderLeft:`3px solid ${mood.color}`,
+              opacity: editing===e.id ? 0.5 : 1,
+            }}>
+              {/* Header */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:20}}>{mood.emoji}</span>
+                  <div>
+                    <p style={{margin:0,fontSize:12,fontWeight:700,color:mood.color}}>{mood.label}</p>
+                    <p style={{margin:0,fontSize:11,color:T.textMuted}}>
+                      {isToday?"Hoje — ":""}{new Date(e.date+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short",day:"numeric",month:"short"})}
+                    </p>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>openEdit(e)} style={{background:"none",border:"none",color:T.textMuted,fontSize:14,cursor:"pointer",padding:"0 4px"}}>✎</button>
+                  <button onClick={()=>{ if(window.confirm("Excluir esta entrada?")) deleteDiaryEntry(e.id); }} style={{background:"none",border:"none",color:T.textMuted,fontSize:14,cursor:"pointer",padding:"0 4px"}}>×</button>
+                </div>
+              </div>
+
+              {/* Title */}
+              {e.title && (
+                <p style={{margin:"0 0 8px",fontSize:16,fontWeight:700,color:T.text,fontFamily:"'Playfair Display',serif",lineHeight:1.3}}>{e.title}</p>
+              )}
+
+              {/* Gratitude */}
+              {e.gratitude && (
+                <div style={{background:`${T.gold}12`,borderRadius:10,padding:"8px 12px",marginBottom:8}}>
+                  <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,color:T.gold,letterSpacing:"0.08em"}}>GRATIDÃO</p>
+                  <p style={{margin:0,fontSize:13,color:T.text,lineHeight:1.5}}>{e.gratitude}</p>
+                </div>
+              )}
+
+              {/* Text */}
+              {e.text && (
+                <p style={{margin:"0 0 8px",fontSize:14,color:T.textSub,lineHeight:1.65}}>{e.text}</p>
+              )}
+
+              {/* Intention */}
+              {e.intention && (
+                <div style={{borderTop:`1px solid ${T.surfaceHigh}`,paddingTop:8,marginTop:4}}>
+                  <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,color:T.sectors.espiritual,letterSpacing:"0.08em"}}>INTENÇÃO PARA AMANHÃ</p>
+                  <p style={{margin:0,fontSize:13,color:T.textSub,lineHeight:1.5,fontStyle:"italic"}}>{e.intention}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── SAÚDE ─────────────────────────────────────────────────────────
+const EXAM_MARKERS=[
+  {id:"glicose",    label:"Glicose",         unit:"mg/dL", ref:"70–99"},
+  {id:"colesterol", label:"Colesterol Total", unit:"mg/dL", ref:"<200"},
+  {id:"hdl",        label:"HDL",             unit:"mg/dL", ref:">40"},
+  {id:"ldl",        label:"LDL",             unit:"mg/dL", ref:"<130"},
+  {id:"triglicerides",label:"Triglicerídeos",unit:"mg/dL", ref:"<150"},
+  {id:"hemoglobina",label:"Hemoglobina",     unit:"g/dL",  ref:"13.5–17.5"},
+  {id:"tsh",        label:"TSH",             unit:"mUI/L", ref:"0.4–4.0"},
+  {id:"vitamina_d", label:"Vitamina D",      unit:"ng/mL", ref:">30"},
+  {id:"acido_urico",label:"Ácido Úrico",     unit:"mg/dL", ref:"3.5–7.2"},
+  {id:"creatinina", label:"Creatinina",      unit:"mg/dL", ref:"0.7–1.3"},
+  {id:"outro",      label:"Outro",           unit:"",      ref:""},
+];
+
+function HealthScreen(){
+  const {health,exams,addHealthEntry,deleteHealthEntry,setHealthGoal,addExam,deleteExam,habits,todayHabits}=useApp();
+  const [tab,setTab]=useState("corpo"); // corpo | exames | ia
+  const [adding,setAdding]=useState(false);
+  const [addingExam,setAddingExam]=useState(false);
+  const [aiAnalysis,setAiAnalysis]=useState(null);
+  const [aiLoading,setAiLoading]=useState(false);
+  const [editGoal,setEditGoal]=useState(false);
+  const [goalInput,setGoalInput]=useState(String(health.goal));
+  const [form,setForm]=useState({date:new Date().toISOString().slice(0,10),weight:"",waist:"",hip:"",bp_sys:"",bp_dia:"",notes:""});
+  const [examForm,setExamForm]=useState({date:new Date().toISOString().slice(0,10),marker:"glicose",value:"",unit:"",notes:"",customName:""});
+
+  const entries=[...health.entries].sort((a,b)=>b.date.localeCompare(a.date));
+  const weightEntries=entries.filter((e)=>e.weight).reverse(); // asc for chart
+  const latest=entries[0];
+  const startWeight=weightEntries[0]?.weight;
+  const currentWeight=weightEntries[weightEntries.length-1]?.weight;
+  const lost=startWeight&&currentWeight ? (startWeight-currentWeight).toFixed(1) : null;
+  const toGoal=currentWeight ? (currentWeight-health.goal).toFixed(1) : null;
+
+  // Mini SVG line chart for weight
+  const chartW=320, chartH=100;
+  const WeightChart=()=>{
+    if(weightEntries.length<2) return(
+      <div style={{height:chartH,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <p style={{fontSize:12,color:T.textMuted}}>Registre pelo menos 2 pesagens para ver o gráfico</p>
+      </div>
+    );
+    const weights=weightEntries.map((e)=>Number(e.weight));
+    const min=Math.min(...weights)-1, max=Math.max(...weights)+1;
+    const pts=weights.map((w,i)=>{
+      const x=(i/(weights.length-1))*(chartW-20)+10;
+      const y=chartH-((w-min)/(max-min))*(chartH-20)-10;
+      return {x,y,w};
+    });
+    const path=pts.map((p,i)=>`${i===0?"M":"L"} ${p.x} ${p.y}`).join(" ");
+    const goalY=chartH-((health.goal-min)/(max-min))*(chartH-20)-10;
+    return(
+      <svg width="100%" viewBox={`0 0 ${chartW} ${chartH}`} style={{overflow:"visible"}}>
+        {/* Goal line */}
+        {health.goal>=min&&health.goal<=max&&(
+          <>
+            <line x1={10} y1={goalY} x2={chartW-10} y2={goalY} stroke={T.success} strokeWidth={1} strokeDasharray="4 3" opacity={0.6}/>
+            <text x={chartW-12} y={goalY-4} fontSize={9} fill={T.success} textAnchor="end">meta</text>
+          </>
+        )}
+        {/* Area fill */}
+        <path d={`${path} L ${pts[pts.length-1].x} ${chartH} L ${pts[0].x} ${chartH} Z`}
+          fill={`${T.sectors.saude}20`}/>
+        {/* Line */}
+        <path d={path} fill="none" stroke={T.sectors.saude} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+        {/* Dots + labels */}
+        {pts.map((p,i)=>(
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r={3} fill={T.sectors.saude}/>
+            {(i===0||i===pts.length-1)&&(
+              <text x={p.x} y={p.y-7} fontSize={9} fill={T.text} textAnchor="middle">{p.w}kg</text>
+            )}
+          </g>
+        ))}
+      </svg>
+    );
+  };
+
+  const save=()=>{
+    if(!form.weight&&!form.bp_sys&&!form.waist) return;
+    addHealthEntry(form);
+    setAdding(false);
+    setForm({date:new Date().toISOString().slice(0,10),weight:"",waist:"",hip:"",bp_sys:"",bp_dia:"",notes:""});
+  };
+
+  const saveExam=()=>{
+    if(!examForm.value) return;
+    const marker=EXAM_MARKERS.find((m)=>m.id===examForm.marker);
+    addExam({
+      ...examForm,
+      label: examForm.marker==="outro" ? examForm.customName : marker?.label,
+      unit:  examForm.unit || marker?.unit,
+      ref:   marker?.ref||"",
+    });
+    setAddingExam(false);
+    setExamForm({date:new Date().toISOString().slice(0,10),marker:"glicose",value:"",unit:"",notes:"",customName:""});
+  };
+
+  const runAI=async()=>{
+    setAiLoading(true);
+    setAiAnalysis(null);
+    const healthHabits=habits.filter((h)=>h.sector==="saude");
+    const weightList=weightEntries.map((e)=>`${e.date}: ${e.weight}kg`).join(", ");
+    const examList=[...exams].sort((a,b)=>b.date.localeCompare(a.date))
+      .map((e)=>`${e.date} — ${e.label}: ${e.value} ${e.unit} (ref: ${e.ref||"?"})`)
+      .join("\n");
+    const bpList=entries.filter((e)=>e.bp_sys).map((e)=>`${e.date}: ${e.bp_sys}×${e.bp_dia}`).join(", ");
+
+    const prompt=`Você é um assistente de saúde preventiva. Analise os dados abaixo e gere um relatório em português com:
+1. RESUMO GERAL (2-3 linhas)
+2. PONTOS POSITIVOS
+3. ALERTAS OU ATENÇÃO (sem alarmismo, só orientações práticas)
+4. TENDÊNCIAS (o que está melhorando ou piorando)
+5. RECOMENDAÇÕES PRÁTICAS (3-5 ações concretas)
+
+Seja direto, empático e prático. Não substitua médico — oriente a buscar profissional quando necessário.
+
+DADOS:
+Meta de peso: ${health.goal}kg
+Peso atual: ${currentWeight||"não registrado"}kg
+Perda até agora: ${lost||0}kg
+Histórico de peso: ${weightList||"sem dados"}
+Pressão arterial: ${bpList||"sem dados"}
+Exames laboratoriais:\n${examList||"sem dados"}
+Hábitos de saúde: ${healthHabits.map((h)=>h.label).join(", ")||"não informados"}`;
+
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:prompt}]}),
+      });
+      const data=await res.json();
+      const text=data.content?.find((b)=>b.type==="text")?.text||"Não foi possível gerar a análise.";
+      setAiAnalysis(text);
+    }catch(e){
+      setAiAnalysis("Erro ao conectar com a IA. Tente novamente.");
+    }
+    setAiLoading(false);
+  };
+
+  const sortedExams=[...exams].sort((a,b)=>b.date.localeCompare(a.date));
+
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 12px"}}>
+        <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:0}}>Saúde</h2>
+        <p style={{fontSize:13,color:T.textSub,margin:"4px 0 0"}}>Corpo é instrumento, cuide bem dele</p>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",margin:"0 12px 14px",background:T.surface,borderRadius:12,padding:4,gap:4}}>
+        {[{id:"corpo",label:"Corpo"},{id:"exames",label:"Exames"},{id:"ia",label:"✦ Análise IA"}].map((t)=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{
+            flex:1,padding:"8px 4px",borderRadius:9,border:"none",cursor:"pointer",fontSize:12,fontWeight:700,
+            background:tab===t.id?T.gold:"transparent",
+            color:tab===t.id?"#0F1117":T.textSub,
+            transition:"all 0.2s",
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* ── TAB: CORPO ── */}
+      {tab==="corpo"&&(<>
+        {/* Stats */}
+        <div style={{margin:"0 12px 12px",display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+          {[
+            {label:"Peso atual",val:currentWeight?`${currentWeight}kg`:"—",color:T.sectors.saude},
+            {label:"Perdido",val:lost&&lost>0?`-${lost}kg`:lost&&lost<0?`+${Math.abs(lost)}kg`:"—",color:lost>0?T.success:T.danger},
+            {label:"Para meta",val:toGoal&&toGoal>0?`-${toGoal}kg`:toGoal<=0?"✓ Meta!":"—",color:toGoal<=0?T.success:T.gold},
+          ].map((k)=>(
+            <div key={k.label} style={{background:T.surface,borderRadius:12,padding:"12px 10px",textAlign:"center"}}>
+              <p style={{margin:0,fontSize:18,fontWeight:700,color:k.color,lineHeight:1.2}}>{k.val}</p>
+              <p style={{margin:"4px 0 0",fontSize:10,color:T.textMuted}}>{k.label}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Weight goal */}
+        <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:14,padding:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <p style={{margin:0,fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>Meta de Peso</p>
+            <button onClick={()=>setEditGoal(!editGoal)} style={{background:"none",border:"none",color:T.textMuted,fontSize:12,cursor:"pointer"}}>✎ editar</button>
+          </div>
+          {editGoal?(
+            <div style={{display:"flex",gap:8}}>
+              <input type="number" value={goalInput} onChange={(e)=>setGoalInput(e.target.value)} style={{...inp,flex:1,padding:"10px 12px"}} placeholder="Peso meta (kg)"/>
+              <Btn onClick={()=>{setHealthGoal(Number(goalInput));setEditGoal(false);}}>Ok</Btn>
+            </div>
+          ):(
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontSize:13,color:T.text}}>{currentWeight||"?"}kg → {health.goal}kg</span>
+                {lost>0&&<span style={{fontSize:13,fontWeight:700,color:T.success}}>-{lost}kg</span>}
+              </div>
+              {currentWeight&&<MiniBar pct={Math.min(((startWeight-currentWeight)/(startWeight-health.goal))*100,100)} color={T.sectors.saude} height={6}/>}
+            </div>
+          )}
+        </div>
+
+        {/* Chart */}
+        <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:14,padding:16}}>
+          <p style={{margin:"0 0 12px",fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>Evolução do Peso</p>
+          <WeightChart/>
+        </div>
+
+        {/* Add body measurement */}
+        <div style={{padding:"0 12px 12px"}}>
+          <Btn onClick={()=>setAdding(!adding)} style={{width:"100%",padding:11}}>+ Novo Registro Corporal</Btn>
+        </div>
+        {adding&&(
+          <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:16,padding:16}}>
+            <input type="date" value={form.date} onChange={(e)=>setForm({...form,date:e.target.value})} style={{...inp,marginBottom:8}}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div><p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>Peso (kg)</p>
+                <input type="number" step="0.1" placeholder="88.5" value={form.weight} onChange={(e)=>setForm({...form,weight:e.target.value})} style={inp}/></div>
+              <div><p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>Cintura (cm)</p>
+                <input type="number" placeholder="92" value={form.waist} onChange={(e)=>setForm({...form,waist:e.target.value})} style={inp}/></div>
+              <div><p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>Quadril (cm)</p>
+                <input type="number" placeholder="100" value={form.hip} onChange={(e)=>setForm({...form,hip:e.target.value})} style={inp}/></div>
+              <div><p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>Pressão</p>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="number" placeholder="120" value={form.bp_sys} onChange={(e)=>setForm({...form,bp_sys:e.target.value})} style={{...inp,padding:"12px 8px",textAlign:"center"}}/>
+                  <span style={{color:T.textMuted,alignSelf:"center"}}>×</span>
+                  <input type="number" placeholder="80" value={form.bp_dia} onChange={(e)=>setForm({...form,bp_dia:e.target.value})} style={{...inp,padding:"12px 8px",textAlign:"center"}}/>
+                </div></div>
+            </div>
+            <textarea placeholder="Observações..." value={form.notes} onChange={(e)=>setForm({...form,notes:e.target.value})} rows={2} style={{...inp,resize:"none",marginBottom:12}}/>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={save} style={{flex:1,padding:12}}>Salvar</Btn>
+              <Btn onClick={()=>setAdding(false)} variant="ghost" style={{flex:1,padding:12}}>Cancelar</Btn>
+            </div>
+          </div>
+        )}
+
+        {/* History */}
+        <div style={{padding:"0 12px"}}>
+          <p style={{margin:"0 0 10px",fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.08em",textTransform:"uppercase"}}>Histórico Corporal</p>
+          {entries.length===0&&<div style={{background:T.surface,borderRadius:14,padding:20,textAlign:"center"}}><p style={{fontSize:28,margin:"0 0 8px"}}>⚖️</p><p style={{color:T.textMuted,fontSize:13}}>Nenhum registro ainda.</p></div>}
+          {entries.map((e)=>(
+            <div key={e.id} style={{background:T.surface,borderRadius:12,padding:14,marginBottom:8,display:"flex",gap:12,alignItems:"flex-start"}}>
+              <p style={{margin:0,fontSize:11,color:T.textMuted,flexShrink:0}}>{new Date(e.date+"T12:00:00").toLocaleDateString("pt-BR",{day:"numeric",month:"short"})}</p>
+              <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:8}}>
+                {e.weight&&<span style={{fontSize:13,fontWeight:700,color:T.sectors.saude}}>{e.weight}kg</span>}
+                {e.waist&&<span style={{fontSize:12,color:T.textSub}}>Cin: {e.waist}cm</span>}
+                {e.hip&&<span style={{fontSize:12,color:T.textSub}}>Quad: {e.hip}cm</span>}
+                {e.bp_sys&&<span style={{fontSize:12,color:T.textSub}}>PA: {e.bp_sys}×{e.bp_dia}</span>}
+                {e.notes&&<p style={{width:"100%",margin:0,fontSize:12,color:T.textMuted}}>{e.notes}</p>}
+              </div>
+              <button onClick={()=>deleteHealthEntry(e.id)} style={{background:"none",border:"none",color:T.textMuted,fontSize:15,cursor:"pointer",padding:0}}>×</button>
+            </div>
+          ))}
+        </div>
+      </>)}
+
+      {/* ── TAB: EXAMES ── */}
+      {tab==="exames"&&(<>
+        <div style={{padding:"0 12px 12px"}}>
+          <Btn onClick={()=>setAddingExam(!addingExam)} style={{width:"100%",padding:11}}>+ Novo Exame</Btn>
+        </div>
+        {addingExam&&(
+          <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:16,padding:16}}>
+            <input type="date" value={examForm.date} onChange={(e)=>setExamForm({...examForm,date:e.target.value})} style={{...inp,marginBottom:8}}/>
+            <select value={examForm.marker} onChange={(e)=>setExamForm({...examForm,marker:e.target.value})} style={{...inp,marginBottom:8}}>
+              {EXAM_MARKERS.map((m)=><option key={m.id} value={m.id}>{m.label}{m.unit?` (${m.unit})`:""}</option>)}
+            </select>
+            {examForm.marker==="outro"&&(
+              <input placeholder="Nome do exame" value={examForm.customName} onChange={(e)=>setExamForm({...examForm,customName:e.target.value})} style={{...inp,marginBottom:8}}/>
+            )}
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <div style={{flex:2}}>
+                <p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>Resultado</p>
+                <input type="number" step="0.1" placeholder="valor" value={examForm.value} onChange={(e)=>setExamForm({...examForm,value:e.target.value})} style={inp}/>
+              </div>
+              <div style={{flex:1}}>
+                <p style={{margin:"0 0 4px",fontSize:11,color:T.textMuted}}>Unidade</p>
+                <input placeholder={EXAM_MARKERS.find((m)=>m.id===examForm.marker)?.unit||"unid."} value={examForm.unit} onChange={(e)=>setExamForm({...examForm,unit:e.target.value})} style={inp}/>
+              </div>
+            </div>
+            <textarea placeholder="Observações do médico, contexto..." value={examForm.notes} onChange={(e)=>setExamForm({...examForm,notes:e.target.value})} rows={2} style={{...inp,resize:"none",marginBottom:12}}/>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={saveExam} style={{flex:1,padding:12}}>Salvar</Btn>
+              <Btn onClick={()=>setAddingExam(false)} variant="ghost" style={{flex:1,padding:12}}>Cancelar</Btn>
+            </div>
+          </div>
+        )}
+        <div style={{padding:"0 12px"}}>
+          {sortedExams.length===0&&(
+            <div style={{background:T.surface,borderRadius:14,padding:24,textAlign:"center"}}>
+              <p style={{fontSize:28,margin:"0 0 8px"}}>🧪</p>
+              <p style={{color:T.textMuted,fontSize:13}}>Nenhum exame registrado ainda.</p>
+              <p style={{color:T.textSub,fontSize:12,marginTop:4}}>Registre seus exames para a IA analisar.</p>
+            </div>
+          )}
+          {/* Group by marker for trend view */}
+          {[...new Set(sortedExams.map((e)=>e.label))].map((label)=>{
+            const markerExams=sortedExams.filter((e)=>e.label===label);
+            const latest=markerExams[0];
+            const ref=latest.ref;
+            return(
+              <div key={label} style={{background:T.surface,borderRadius:14,marginBottom:10,overflow:"hidden"}}>
+                <div style={{padding:"12px 14px 8px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <p style={{margin:0,fontSize:14,fontWeight:700,color:T.text}}>{label}</p>
+                    {ref&&<p style={{margin:"2px 0 0",fontSize:11,color:T.textMuted}}>Referência: {ref}</p>}
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{margin:0,fontSize:20,fontWeight:700,color:T.sectors.saude}}>{latest.value}</p>
+                    <p style={{margin:0,fontSize:11,color:T.textMuted}}>{latest.unit}</p>
+                  </div>
+                </div>
+                {markerExams.map((e,i)=>(
+                  <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",borderTop:`1px solid ${T.surfaceHigh}`,background:i===0?`${T.sectors.saude}08`:"transparent"}}>
+                    <span style={{fontSize:12,color:T.textMuted}}>{new Date(e.date+"T12:00:00").toLocaleDateString("pt-BR",{day:"numeric",month:"short",year:"2-digit"})}</span>
+                    <span style={{fontSize:13,fontWeight:i===0?700:400,color:i===0?T.sectors.saude:T.textSub}}>{e.value} {e.unit}</span>
+                    {e.notes&&<span style={{fontSize:11,color:T.textMuted,flex:1,marginLeft:8,textAlign:"right"}}>{e.notes}</span>}
+                    <button onClick={()=>deleteExam(e.id)} style={{background:"none",border:"none",color:T.textMuted,fontSize:14,cursor:"pointer",padding:"0 0 0 8px"}}>×</button>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </>)}
+
+      {/* ── TAB: IA ── */}
+      {tab==="ia"&&(
+        <div style={{padding:"0 12px"}}>
+          <div style={{background:T.surface,borderRadius:16,padding:16,marginBottom:12,borderTop:`3px solid ${T.gold}`}}>
+            <p style={{margin:"0 0 6px",fontSize:12,fontWeight:700,color:T.gold,letterSpacing:"0.08em"}}>ANÁLISE DE SAÚDE — IA</p>
+            <p style={{margin:"0 0 14px",fontSize:13,color:T.textSub,lineHeight:1.5}}>
+              A IA recebe todo seu histórico — peso, pressão, exames laboratoriais e hábitos de saúde — e gera uma análise personalizada com alertas, tendências e recomendações práticas.
+            </p>
+            <Btn onClick={runAI} style={{width:"100%",padding:13}} variant={aiLoading?"ghost":"gold"}>
+              {aiLoading?"⏳ Analisando seus dados...":"◉ Gerar Análise Completa"}
+            </Btn>
+          </div>
+
+          {aiLoading&&(
+            <div style={{background:T.surface,borderRadius:14,padding:24,textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:12,animation:"pulse 1.5s infinite"}}>🧬</div>
+              <p style={{color:T.textSub,fontSize:14}}>Analisando peso, pressão e exames...</p>
+              <p style={{color:T.textMuted,fontSize:12,marginTop:4}}>Isso leva alguns segundos</p>
+            </div>
+          )}
+
+          {aiAnalysis&&!aiLoading&&(
+            <div style={{background:T.surface,borderRadius:16,padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <p style={{margin:0,fontSize:12,fontWeight:700,color:T.gold,letterSpacing:"0.08em"}}>RELATÓRIO</p>
+                <button onClick={()=>setAiAnalysis(null)} style={{background:"none",border:"none",color:T.textMuted,fontSize:12,cursor:"pointer"}}>✕ fechar</button>
+              </div>
+              {aiAnalysis.split("\n").map((line,i)=>{
+                const isHeader=/^\d\./.test(line)||/^[A-Z\s]{4,}:/.test(line);
+                return line.trim()?(
+                  <p key={i} style={{
+                    margin:isHeader?"12px 0 4px":"0 0 6px",
+                    fontSize:isHeader?11:14,
+                    fontWeight:isHeader?700:400,
+                    color:isHeader?T.gold:T.text,
+                    letterSpacing:isHeader?"0.08em":"0",
+                    textTransform:isHeader?"uppercase":"none",
+                    lineHeight:1.6,
+                  }}>{line}</p>
+                ):null;
+              })}
+              <div style={{marginTop:14,paddingTop:12,borderTop:`1px solid ${T.surfaceHigh}`,display:"flex",justifyContent:"center"}}>
+                <button onClick={runAI} style={{background:"none",border:"none",color:T.textSub,fontSize:12,cursor:"pointer"}}>↻ Atualizar análise</button>
+              </div>
+            </div>
+          )}
+
+          {!aiAnalysis&&!aiLoading&&(
+            <div style={{background:T.surface,borderRadius:14,padding:20,textAlign:"center",marginTop:8}}>
+              <p style={{fontSize:24,margin:"0 0 8px"}}>📊</p>
+              <p style={{color:T.textSub,fontSize:13,lineHeight:1.5}}>
+                Quanto mais dados você registrar — peso, pressão e exames — mais precisa será a análise.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── REVISÃO SEMANAL ───────────────────────────────────────────────
+function WeeklyReviewScreen(){
+  const {habits,goals,checks,diary,goalProgress,streak,todayKey,health,exams}=useApp();
+  const [aiReview,setAiReview]=useState(null);
+  const [loading,setLoading]=useState(false);
+
+  // Build last 7 days data
+  const last7=useMemo(()=>Array.from({length:7},(_,i)=>{
+    const d=new Date(); d.setDate(d.getDate()-(6-i));
+    const dk=d.toISOString().slice(0,10);
+    const dc=checks[dk]||{};
+    const done=habits.filter((h)=>dc[h.id]).length;
+    const dayName=d.toLocaleDateString("pt-BR",{weekday:"short"});
+    return {key:dk, dayName, done, total:habits.length, pct:habits.length?Math.round((done/habits.length)*100):0};
+  }),[habits,checks]);
+
+  const weekDone   = last7.reduce((a,d)=>a+d.done,0);
+  const weekTarget = habits.length*7;
+  const weekPct    = weekTarget ? Math.round((weekDone/weekTarget)*100) : 0;
+  const perfectDays= last7.filter((d)=>d.pct===100).length;
+  const zeroDays   = last7.filter((d)=>d.pct===0).length;
+
+  // Goals that got bricks this week
+  const goalsWithBricks=goals.filter((g)=>
+    last7.some((d)=>habits.filter((h)=>h.goalId===g.id).some((h)=>(checks[d.key]||{})[h.id]))
+  );
+  const goalsNeglected=goals.filter((g)=>!goalsWithBricks.find((gb)=>gb.id===g.id));
+
+  // Diary entries this week
+  const weekDiary=diary.filter((e)=>last7.some((d)=>d.key===e.date));
+
+  // Best and worst day
+  const sorted=[...last7].sort((a,b)=>b.pct-a.pct);
+  const bestDay=sorted[0];
+  const worstDay=sorted[sorted.length-1];
+
+  const isSunday=new Date().getDay()===0;
+
+  const runAI=async()=>{
+    setLoading(true); setAiReview(null);
+    const habitSummary=last7.map((d)=>`${d.dayName}: ${d.done}/${d.total} (${d.pct}%)`).join(", ");
+    const goalsAdvanced=goalsWithBricks.map((g)=>`${g.title} (${goalProgress[g.id]||0}%)`).join(", ")||"nenhuma";
+    const goalsStalled=goalsNeglected.map((g)=>g.title).join(", ")||"nenhuma";
+    const diaryMoods=weekDiary.map((e)=>e.mood).join(", ")||"sem registros";
+    const diaryReflections=weekDiary.map((e)=>e.text||e.gratitude).filter(Boolean).join(" | ")||"sem reflexões";
+    const intentions=weekDiary.map((e)=>e.intention).filter(Boolean).join(" | ")||"sem intenções registradas";
+
+    const prompt=`Você é um coach de vida cristão — prático, encorajador, direto. Faça uma revisão semanal em português baseada nos dados abaixo.
+
+Estrutura obrigatória:
+1. BALANÇO DA SEMANA (2-3 linhas honestas)
+2. PONTOS DE LUZ (o que foi bem)
+3. ÁREAS DE ATENÇÃO (sem julgamento, só clareza)
+4. PADRÃO IDENTIFICADO (algo que os dados revelam)
+5. FOCO DA PRÓXIMA SEMANA (1 prioridade clara + 3 ações)
+6. PALAVRA DE ENCORAJAMENTO (1 versículo ou princípio)
+
+Seja como um mentor que conhece o Rafael de verdade. Use os dados, não generalize.
+
+DADOS DA SEMANA:
+Consistência por dia: ${habitSummary}
+Total: ${weekDone}/${weekTarget} hábitos (${weekPct}%)
+Dias perfeitos: ${perfectDays} | Dias zerados: ${zeroDays}
+Sequência atual: ${streak.count} dias
+Metas que avançaram: ${goalsAdvanced}
+Metas negligenciadas: ${goalsStalled}
+Humor da semana: ${diaryMoods}
+Reflexões: ${diaryReflections}
+Intenções registradas: ${intentions}`;
+
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1200,messages:[{role:"user",content:prompt}]}),
+      });
+      const data=await res.json();
+      setAiReview(data.content?.find((b)=>b.type==="text")?.text||"Erro ao gerar revisão.");
+    }catch{ setAiReview("Erro de conexão. Tente novamente."); }
+    setLoading(false);
+  };
+
+  const maxBar=60;
+
+  return(
+    <div style={{paddingBottom:90}}>
+      <div style={{padding:"28px 20px 16px"}}>
+        <p style={{fontSize:12,color:T.gold,margin:0,fontWeight:700,letterSpacing:"0.08em"}}>
+          {isSunday?"🗓 HOJE É DOMINGO — DIA DE REVISÃO":"REVISÃO SEMANAL"}
+        </p>
+        <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:24,color:T.text,margin:"4px 0 0"}}>
+          Como foi sua semana?
+        </h2>
+        <p style={{fontSize:13,color:T.textSub,margin:"6px 0 0"}}>
+          {new Date(last7[0].key+"T12:00:00").toLocaleDateString("pt-BR",{day:"numeric",month:"short"})} — {new Date(last7[6].key+"T12:00:00").toLocaleDateString("pt-BR",{day:"numeric",month:"short"})}
+        </p>
+      </div>
+
+      {/* Week consistency bar chart */}
+      <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:16,padding:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <p style={{margin:0,fontSize:12,fontWeight:700,color:T.textSub,letterSpacing:"0.1em",textTransform:"uppercase"}}>Consistência</p>
+          <span style={{fontSize:18,fontWeight:700,color:weekPct>=70?T.gold:T.textSub}}>{weekPct}%</span>
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:6,height:maxBar+24}}>
+          {last7.map((d)=>{
+            const barH=Math.max((d.pct/100)*maxBar,4);
+            const isToday=d.key===todayKey;
+            const color=d.pct>=80?T.gold:d.pct>=50?T.goldDim:T.surfaceHigh;
+            return(
+              <div key={d.key} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                <span style={{fontSize:9,color:d.pct>=80?T.gold:T.textMuted}}>{d.pct>0?`${d.pct}%`:""}</span>
+                <div style={{width:"100%",height:barH,borderRadius:"4px 4px 0 0",background:color,border:isToday?`1px solid ${T.gold}`:"none",transition:"height 0.5s"}}/>
+                <span style={{fontSize:10,color:isToday?T.gold:T.textMuted,fontWeight:isToday?700:400}}>{d.dayName}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* KPI cards */}
+      <div style={{margin:"0 12px 12px",display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+        {[
+          {label:"Hábitos feitos",  val:`${weekDone}/${weekTarget}`, color:T.gold},
+          {label:"Dias perfeitos",  val:`${perfectDays} dias 🔥`,    color:T.success},
+          {label:"Dias zerados",    val:`${zeroDays} dias`,          color:zeroDays>2?T.danger:T.textSub},
+          {label:"Sequência",       val:`${streak.count} dias`,      color:T.sectors.espiritual},
+        ].map((k)=>(
+          <div key={k.label} style={{background:T.surface,borderRadius:14,padding:14}}>
+            <p style={{margin:0,fontSize:22,fontWeight:700,color:k.color}}>{k.val}</p>
+            <p style={{margin:"4px 0 0",fontSize:11,color:T.textSub}}>{k.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Melhor e pior dia */}
+      <div style={{margin:"0 12px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{background:T.surface,borderRadius:14,padding:14,borderTop:`3px solid ${T.success}`}}>
+          <p style={{margin:"0 0 4px",fontSize:10,fontWeight:700,color:T.success,letterSpacing:"0.08em"}}>MELHOR DIA</p>
+          <p style={{margin:0,fontSize:15,fontWeight:700,color:T.text,textTransform:"capitalize"}}>{bestDay.dayName}</p>
+          <p style={{margin:"2px 0 0",fontSize:12,color:T.textSub}}>{bestDay.pct}% concluído</p>
+        </div>
+        <div style={{background:T.surface,borderRadius:14,padding:14,borderTop:`3px solid ${T.surfaceHigh}`}}>
+          <p style={{margin:"0 0 4px",fontSize:10,fontWeight:700,color:T.textMuted,letterSpacing:"0.08em"}}>DIA MAIS FRACO</p>
+          <p style={{margin:0,fontSize:15,fontWeight:700,color:T.text,textTransform:"capitalize"}}>{worstDay.dayName}</p>
+          <p style={{margin:"2px 0 0",fontSize:12,color:T.textSub}}>{worstDay.pct}% concluído</p>
+        </div>
+      </div>
+
+      {/* Metas que avançaram */}
+      <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:14,padding:14}}>
+        <p style={{margin:"0 0 12px",fontSize:11,fontWeight:700,color:T.textSub,letterSpacing:"0.1em",textTransform:"uppercase"}}>
+          Obras que avançaram
+        </p>
+        {goalsWithBricks.length===0&&<p style={{fontSize:13,color:T.textMuted}}>Nenhuma meta recebeu tijolos esta semana.</p>}
+        {goalsWithBricks.map((g)=>{
+          const color=T.sectors[g.sector], pct=goalProgress[g.id]||0;
+          return(
+            <div key={g.id} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                <span style={{fontSize:13,color:T.text,flex:1}}>🧱 {g.title}</span>
+                <span style={{fontSize:13,fontWeight:700,color,marginLeft:8}}>{pct}%</span>
+              </div>
+              <MiniBar pct={pct} color={color} height={4}/>
+            </div>
+          );
+        })}
+        {goalsNeglected.length>0&&(
+          <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${T.surfaceHigh}`}}>
+            <p style={{margin:"0 0 8px",fontSize:11,fontWeight:700,color:T.danger,letterSpacing:"0.08em",textTransform:"uppercase"}}>Sem tijolos esta semana</p>
+            {goalsNeglected.map((g)=>(
+              <p key={g.id} style={{margin:"0 0 4px",fontSize:13,color:T.textMuted}}>◦ {g.title}</p>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Diary mood summary */}
+      {weekDiary.length>0&&(
+        <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:14,padding:14}}>
+          <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,color:T.textSub,letterSpacing:"0.1em",textTransform:"uppercase"}}>
+            Diário da semana ({weekDiary.length} entrada{weekDiary.length!==1?"s":""})
+          </p>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {weekDiary.map((e)=>{
+              const MOOD_MAP={excelente:"🔥",bem:"😊",neutro:"😐",cansado:"😔",dificil:"⛈"};
+              return(
+                <div key={e.id} style={{background:T.surfaceHigh,borderRadius:10,padding:"6px 10px",display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:16}}>{MOOD_MAP[e.mood]||"😊"}</span>
+                  <span style={{fontSize:11,color:T.textSub}}>{new Date(e.date+"T12:00:00").toLocaleDateString("pt-BR",{weekday:"short"})}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* AI Review */}
+      <div style={{margin:"0 12px 12px",background:`linear-gradient(135deg,${T.surface},#1E2438)`,borderRadius:16,padding:16,borderTop:`3px solid ${T.gold}`}}>
+        <p style={{margin:"0 0 6px",fontSize:12,fontWeight:700,color:T.gold,letterSpacing:"0.08em"}}>✦ REVISÃO COM IA</p>
+        <p style={{margin:"0 0 14px",fontSize:13,color:T.textSub,lineHeight:1.5}}>
+          A IA analisa toda a semana e entrega um balanço honesto, padrões identificados e o foco certo para a próxima semana.
+        </p>
+        <Btn onClick={runAI} style={{width:"100%",padding:13}} variant={loading?"ghost":"gold"}>
+          {loading?"⏳ Analisando sua semana...":"◉ Gerar Revisão da Semana"}
+        </Btn>
+      </div>
+
+      {loading&&(
+        <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:14,padding:24,textAlign:"center"}}>
+          <p style={{fontSize:32,margin:"0 0 10px"}}>🔍</p>
+          <p style={{color:T.textSub,fontSize:14}}>Analisando seus 7 dias...</p>
+          <p style={{color:T.textMuted,fontSize:12,marginTop:4}}>Hábitos, metas, diário e padrões</p>
+        </div>
+      )}
+
+      {aiReview&&!loading&&(
+        <div style={{margin:"0 12px 12px",background:T.surface,borderRadius:16,padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <p style={{margin:0,fontSize:12,fontWeight:700,color:T.gold,letterSpacing:"0.08em"}}>RELATÓRIO DA SEMANA</p>
+            <button onClick={()=>setAiReview(null)} style={{background:"none",border:"none",color:T.textMuted,fontSize:12,cursor:"pointer"}}>✕</button>
+          </div>
+          {aiReview.split("\n").map((line,i)=>{
+            const isHeader=/^\d\./.test(line.trim())||/^[A-ZÁÉÍÓÚ\s]{5,}:/.test(line.trim());
+            return line.trim()?(
+              <p key={i} style={{
+                margin:isHeader?"14px 0 5px":"0 0 7px",
+                fontSize:isHeader?11:14,
+                fontWeight:isHeader?700:400,
+                color:isHeader?T.gold:T.text,
+                letterSpacing:isHeader?"0.08em":"0",
+                textTransform:isHeader?"uppercase":"none",
+                lineHeight:1.65,
+              }}>{line}</p>
+            ):null;
+          })}
+          <div style={{marginTop:16,paddingTop:12,borderTop:`1px solid ${T.surfaceHigh}`,textAlign:"center"}}>
+            <button onClick={runAI} style={{background:"none",border:"none",color:T.textSub,fontSize:12,cursor:"pointer"}}>↻ Atualizar revisão</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── NAV ───────────────────────────────────────────────────────────
+const NAV=[
+  {id:"home",    icon:"◉", label:"Hoje"},
+  {id:"goals",   icon:"◈", label:"Metas"},
+  {id:"diary",   icon:"✍", label:"Diário"},
+  {id:"health",  icon:"◎", label:"Saúde"},
+  {id:"review",  icon:"◇", label:"Semana"},
+];
+function BottomNav({active,onNavigate}){
+  return(
+    <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:430,background:"#13182A",borderTop:`1px solid ${T.surfaceHigh}`,display:"flex",justifyContent:"space-around",padding:"10px 0 20px",zIndex:100}}>
+      {NAV.map((item)=>{
+        const isActive=active===item.id;
+        return(
+          <button key={item.id} onClick={()=>onNavigate(item.id)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,padding:"4px 10px"}}>
+            <span style={{fontSize:item.id==="library"?16:18,color:isActive?T.gold:T.textMuted,transition:"color 0.2s"}}>{item.icon}</span>
+            <span style={{fontSize:9,fontWeight:isActive?700:400,color:isActive?T.gold:T.textMuted,letterSpacing:"0.05em",textTransform:"uppercase",transition:"color 0.2s"}}>{item.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── ROOT ──────────────────────────────────────────────────────────
+function App(){
+  const isSunday=new Date().getDay()===0;
+  const [page,setPage]=useState(isSunday?"review":"home");
+  const PAGES={home:<HomeScreen/>,goals:<GoalsScreen/>,diary:<DiaryScreen/>,health:<HealthScreen/>,review:<WeeklyReviewScreen/>};
+  return(
+    <AppProvider>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400&family=Inter:wght@400;500;600;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+        body{background:${T.bg};font-family:'Inter',sans-serif;color:${T.text};}
+        input,select,textarea{font-family:'Inter',sans-serif;color:${T.text};}
+        ::-webkit-scrollbar{display:none;}
+        select{appearance:none;} option{background:${T.surface};}
+        input[type=date]::-webkit-calendar-picker-indicator{filter:invert(0.5);}
+      `}</style>
+      <div style={{maxWidth:430,margin:"0 auto",minHeight:"100vh",background:T.bg}}>
+        <div style={{overflowY:"auto",height:"100vh"}}>{PAGES[page]}</div>
+        <BottomNav active={page} onNavigate={setPage}/>
+      </div>
+    </AppProvider>
+  );
+}
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -53,7 +1816,7 @@
       setTimeout(() => {
         const splash = document.getElementById('splash');
         if (splash) { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); }
-      }, 1200);
+      }, 1500);
     });
   </script>
 </body>
