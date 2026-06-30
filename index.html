@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#C9A84C" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vida Intencional" />
+  <meta name="description" content="Sistema operacional da sua vida" />
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <title>Vida Intencional</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #root {
+      height: 100%;
+      background: #0F1117;
+      font-family: -apple-system, 'Inter', sans-serif;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    #splash {
+      position: fixed; inset: 0;
+      background: #0F1117;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; z-index: 9999;
+      transition: opacity 0.5s ease;
+    }
+    #splash p { color: #C9A84C; font-size: 13px; letter-spacing: 0.1em; }
+    #splash h1 { color: #E8E2D5; font-size: 28px; font-family: Georgia, serif; }
+  </style>
+</head>
+<body>
+  <div id="splash">
+    <span style="font-size: 48px;">✦</span>
+    <h1>Vida Intencional</h1>
+    <p>TODO DIA, UM TIJOLO.</p>
+  </div>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel" data-type="module" src="/app.jsx"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(console.error);
+      });
+    }
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const splash = document.getElementById('splash');
+        if (splash) { splash.style.opacity = '0'; setTimeout(() => splash.remove(), 500); }
+      }, 1200);
+    });
+  </script>
+</body>
+</html>
